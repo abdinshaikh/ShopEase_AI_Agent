@@ -28,7 +28,11 @@ from src.agent_tools import (
 )
 
 
-from config.settings import MODEL_NAME, DEBUG_MODE
+from config.settings import (
+    MEMORY_DB_PATH,
+    OLLAMA_MODEL,
+    DEBUG_MODE
+)
 
 
 SHOP_EASE_SYSTEM_PROMPT = """
@@ -48,7 +52,8 @@ IMPORTANT RULES:
 1. NEVER invent information.
    Only provide information that is available from the tools, conversation, or system instructions.
 
-2. If the requested information is not available, clearly say that it is not available.
+2. If the requested information is not available, clearly say that it was not found.
+   For an unknown order, explicitly say "Order not found."
 
 3. Do not invent cancellation reasons.
    The order database may contain the status "Cancelled" without containing a cancellation reason.
@@ -271,7 +276,7 @@ def agent_node(state: AgentState):
     ] + ollama_messages
 
     response = chat(
-        model=MODEL_NAME,
+        model=OLLAMA_MODEL,
         messages=messages_for_qwen,
         tools=tools,
         think=False
@@ -383,13 +388,8 @@ def create_agent():
 
     builder.add_edge("tool", "agent")
 
-    memory_db_path = (
-        "/content/drive/MyDrive/"
-        "ShopEase_AI_Agent/database/agent_memory.db"
-    )
-
     connection = sqlite3.connect(
-        memory_db_path,
+        MEMORY_DB_PATH,
         check_same_thread=False
     )
 

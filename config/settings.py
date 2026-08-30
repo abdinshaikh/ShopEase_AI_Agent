@@ -1,4 +1,3 @@
-
 import os
 
 
@@ -6,12 +5,26 @@ PROJECT_ROOT = os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))
 )
 
+
 DB_PATH = os.path.join(
     PROJECT_ROOT,
     "database",
     "shopease.db"
 )
 
-MODEL_NAME = "qwen3:8b"
+
+MEMORY_DB_PATH = os.path.join(
+    PROJECT_ROOT,
+    "database",
+    "agent_memory.db"
+)
+
+
+LLM_PROVIDER = "ollama"
+
+OLLAMA_MODEL = "qwen3:8b"
+
+GEMINI_MODEL = "gemini-2.5-flash-lite"
+
 
 DEBUG_MODE = False
