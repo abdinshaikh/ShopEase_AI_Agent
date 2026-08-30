@@ -71,8 +71,8 @@ def _convert_tools_to_gemini(
     tools
 ):
     """
-    Convert ShopEase's existing tool definitions
-    into Interactions API function definitions.
+    Convert ShopEase tool definitions into the
+    Gemini Interactions API function format.
     """
 
     gemini_tools = []
@@ -91,111 +91,6 @@ def _convert_tools_to_gemini(
     return gemini_tools
 
 
-def _convert_messages_to_gemini(
-    messages
-):
-    """
-    Convert the application's messages into the
-    Interactions API input format.
-    """
-
-    converted = []
-
-    for message in messages:
-
-        role = message.get("role")
-
-        content = message.get(
-            "content",
-            ""
-        )
-
-        # -------------------------------------------------
-        # System messages
-        # -------------------------------------------------
-
-        if role == "system":
-            continue
-
-        # -------------------------------------------------
-        # User messages
-        # -------------------------------------------------
-
-        if role == "user":
-
-            if content:
-
-                converted.append({
-                    "type": "text",
-                    "role": "user",
-                    "text": content
-                })
-
-        # -------------------------------------------------
-        # Assistant messages
-        # -------------------------------------------------
-
-        elif role == "assistant":
-
-            if content:
-
-                converted.append({
-                    "type": "text",
-                    "role": "model",
-                    "text": content
-                })
-
-            for tool_call in message.get(
-                "tool_calls",
-                []
-            ):
-
-                function = tool_call["function"]
-
-                converted.append({
-                    "type": "function_call",
-                    "name": function["name"],
-                    "arguments": function["arguments"],
-                    "call_id": tool_call["id"]
-                })
-
-        # -------------------------------------------------
-        # Tool results
-        # -------------------------------------------------
-
-        elif role == "tool":
-
-            tool_name = message.get(
-                "name",
-                "unknown_tool"
-            )
-
-            tool_call_id = message.get(
-                "tool_call_id",
-                ""
-            )
-
-            if content:
-
-                converted.append({
-                    "type": "function_result",
-                    "name": tool_name,
-                    "call_id": tool_call_id,
-                    "result": [
-                        {
-                            "type": "text",
-                            "text": content
-                        }
-                    ]
-                })
-
-    return converted
-
-
-# =========================================================
-# Gemini
-# =========================================================
-
 def call_gemini(
     messages,
     tools,
@@ -205,11 +100,11 @@ def call_gemini(
     """
     Call Gemini through the Interactions API.
 
-    The first call sends the user's message and tools.
+    A normal customer message starts a NEW interaction.
 
-    When a tool has been executed by LangGraph, the second
-    call sends only the corresponding function result using
-    the previous Gemini interaction ID.
+    When Gemini requests a tool, LangGraph executes the
+    tool and calls this function again with the previous
+    Gemini interaction ID and the tool result.
     """
 
     api_key = os.getenv(
@@ -232,9 +127,9 @@ def call_gemini(
         )
     )
 
-    # -----------------------------------------------------
-    # Continue an existing Gemini interaction
-    # -----------------------------------------------------
+    # =====================================================
+    # TOOL RESULT CONTINUATION
+    # =====================================================
 
     if previous_interaction_id:
 
@@ -242,65 +137,33 @@ def call_gemini(
 
         for message in reversed(messages):
 
-            if hasattr(message, "type"):
+            if (
+                isinstance(message, dict)
+                and message.get("role") == "tool"
+            ):
 
-                if message.type == "tool":
-                    tool_message = message
-                    break
-
-            elif isinstance(message, dict):
-
-                if message.get("role") == "tool":
-                    tool_message = message
-                    break
+                tool_message = message
+                break
 
         if tool_message is None:
 
             raise RuntimeError(
-                "No tool result found for the "
-                "Gemini interaction."
+                "Expected a tool result when "
+                "continuing a Gemini interaction."
             )
 
-        if hasattr(tool_message, "name"):
+        tool_name = tool_message.get(
+            "name"
+        )
 
-            tool_name = tool_message.name
-
-        else:
-
-            tool_name = tool_message.get(
-                "name"
-            )
-
-        if hasattr(
-            tool_message,
+        tool_call_id = tool_message.get(
             "tool_call_id"
-        ):
+        )
 
-            tool_call_id = (
-                tool_message.tool_call_id
-            )
-
-        else:
-
-            tool_call_id = tool_message.get(
-                "tool_call_id"
-            )
-
-        if hasattr(
-            tool_message,
-            "content"
-        ):
-
-            tool_content = (
-                tool_message.content
-            )
-
-        else:
-
-            tool_content = tool_message.get(
-                "content",
-                ""
-            )
+        tool_content = tool_message.get(
+            "content",
+            ""
+        )
 
         if not tool_name:
 
@@ -336,15 +199,21 @@ def call_gemini(
             ]
         )
 
-    # -----------------------------------------------------
-    # Start a new Gemini interaction
-    # -----------------------------------------------------
+    # =====================================================
+    # NEW CUSTOMER TURN
+    # =====================================================
 
     else:
 
         user_message = ""
 
         for message in reversed(messages):
+
+            if not isinstance(
+                message,
+                dict
+            ):
+                continue
 
             if message.get("role") == "user":
 
@@ -368,41 +237,105 @@ def call_gemini(
             tools=gemini_tools
         )
 
-    # -----------------------------------------------------
-    # Normalize Gemini response
-    # -----------------------------------------------------
+    # =====================================================
+    # NORMALIZE GEMINI RESPONSE
+    # =====================================================
 
     content = ""
 
     tool_calls = []
 
-    for step in response.steps:
+    steps = response.steps or []
+
+    for step in steps:
+
+        # -------------------------------------------------
+        # Function call
+        # -------------------------------------------------
 
         if step.type == "function_call":
 
+            arguments = (
+                getattr(
+                    step,
+                    "arguments",
+                    None
+                )
+                or {}
+            )
+
+            tool_name = (
+                getattr(
+                    step,
+                    "name",
+                    ""
+                )
+                or ""
+            )
+
+            tool_call_id = (
+                getattr(
+                    step,
+                    "id",
+                    ""
+                )
+                or ""
+            )
+
             tool_calls.append({
-                "name": step.name,
-                "args": dict(
-                    step.arguments
-                ),
-                "id": step.id
+                "name": tool_name,
+                "args": dict(arguments),
+                "id": tool_call_id
             })
 
-        elif step.type == "text":
+        # -------------------------------------------------
+        # Model output
+        # -------------------------------------------------
 
-            if hasattr(
-                step,
-                "text"
-            ):
+        elif step.type == "model_output":
 
-                content += (
-                    step.text or ""
+            outputs = (
+                getattr(
+                    step,
+                    "content",
+                    None
                 )
+                or []
+            )
+
+            for output in outputs:
+
+                if (
+                    getattr(
+                        output,
+                        "type",
+                        None
+                    )
+                    == "text"
+                ):
+
+                    content += (
+                        getattr(
+                            output,
+                            "text",
+                            ""
+                        )
+                        or ""
+                    )
+
+    # -----------------------------------------------------
+    # Fallback
+    # -----------------------------------------------------
 
     if not content:
 
         content = (
-            response.output_text or ""
+            getattr(
+                response,
+                "output_text",
+                ""
+            )
+            or ""
         )
 
     return LLMResponse(

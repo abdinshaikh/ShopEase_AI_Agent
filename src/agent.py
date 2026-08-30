@@ -265,45 +265,83 @@ def convert_to_ollama_messages(messages):
 
 def agent_node(state: AgentState):
 
-    ollama_messages = convert_to_ollama_messages(
-        state["messages"]
+    # -----------------------------------------------------
+    # Check whether this invocation is returning a tool
+    # result to Gemini.
+    # -----------------------------------------------------
+
+    previous_interaction_id = ""
+
+    if state["messages"]:
+
+        last_message = state["messages"][-1]
+
+        if isinstance(
+            last_message,
+            ToolMessage
+        ):
+
+            previous_interaction_id = (
+                state.get(
+                    "gemini_interaction_id",
+                    ""
+                )
+            )
+
+    # -----------------------------------------------------
+    # Convert LangGraph messages to the common LLM format.
+    # -----------------------------------------------------
+
+    ollama_messages = (
+        convert_to_ollama_messages(
+            state["messages"]
+        )
     )
 
-    messages_for_qwen = [
+    messages_for_llm = [
         {
             "role": "system",
             "content": SHOP_EASE_SYSTEM_PROMPT
         }
     ] + ollama_messages
 
+    # -----------------------------------------------------
+    # Call the configured LLM.
+    # -----------------------------------------------------
+
     response = call_llm(
         provider=LLM_PROVIDER,
-        messages=messages_for_qwen,
+        messages=messages_for_llm,
         tools=tools,
         system_prompt=SHOP_EASE_SYSTEM_PROMPT,
-        previous_interaction_id=state.get(
-            "gemini_interaction_id",
-            ""
+        previous_interaction_id=(
+            previous_interaction_id
         )
     )
 
     if DEBUG_MODE:
-        print("Qwen response:")
+
+        print("LLM response:")
         print(response)
+
+    # -----------------------------------------------------
+    # Convert tool calls to LangGraph format.
+    # -----------------------------------------------------
 
     tool_calls = []
 
-    for index, tool_call in enumerate(
-        response.tool_calls
-    ):
+    for tool_call in response.tool_calls:
 
         tool_calls.append({
             "name": tool_call["name"],
             "args": tool_call["args"],
-            "id": f"call_{index + 1}",
+            "id": tool_call["id"],
             "type": "tool_call"
         })
 
+    # -----------------------------------------------------
+    # Create AI message.
+    # -----------------------------------------------------
 
     ai_message = AIMessage(
         content=response.content or "",
@@ -312,9 +350,10 @@ def agent_node(state: AgentState):
 
     return {
         "messages": [ai_message],
-        "gemini_interaction_id": response.interaction_id
+        "gemini_interaction_id": (
+            response.interaction_id
+        )
     }
-
 
 def tool_node(state: AgentState):
 
