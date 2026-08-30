@@ -20,11 +20,11 @@ MEMORY_DB_PATH = os.path.join(
 )
 
 
-LLM_PROVIDER = "ollama"
+LLM_PROVIDER = "gemini"
 
 OLLAMA_MODEL = "qwen3:8b"
 
-GEMINI_MODEL = "gemini-2.5-flash-lite"
+GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 
 DEBUG_MODE = False

@@ -1,7 +1,7 @@
 import sqlite3
 
 
-from src.llm import call_ollama
+from src.llm import call_llm
 
 from langchain_core.messages import (
     AIMessage,
@@ -30,6 +30,7 @@ from src.agent_tools import (
 
 from config.settings import (
     MEMORY_DB_PATH,
+    LLM_PROVIDER,
     DEBUG_MODE
 )
 
@@ -52,7 +53,6 @@ IMPORTANT RULES:
    Only provide information that is available from the tools, conversation, or system instructions.
 
 2. If the requested information is not available, clearly say that it was not found.
-   For an unknown order, explicitly say "Order not found."
 
 3. Do not invent cancellation reasons.
    The order database may contain the status "Cancelled" without containing a cancellation reason.
@@ -251,7 +251,9 @@ def convert_to_ollama_messages(messages):
 
                 converted.append({
                     "role": "tool",
-                    "content": message.content
+                    "content": message.content,
+                    "name": message.name,
+                    "tool_call_id": message.tool_call_id
                 })
 
         else:
@@ -274,9 +276,15 @@ def agent_node(state: AgentState):
         }
     ] + ollama_messages
 
-    response = call_ollama(
-        messages_for_qwen,
-        tools
+    response = call_llm(
+        provider=LLM_PROVIDER,
+        messages=messages_for_qwen,
+        tools=tools,
+        system_prompt=SHOP_EASE_SYSTEM_PROMPT,
+        previous_interaction_id=state.get(
+            "gemini_interaction_id",
+            ""
+        )
     )
 
     if DEBUG_MODE:
@@ -285,26 +293,26 @@ def agent_node(state: AgentState):
 
     tool_calls = []
 
-    if response.message.tool_calls:
+    for index, tool_call in enumerate(
+        response.tool_calls
+    ):
 
-        for index, tool_call in enumerate(
-            response.message.tool_calls
-        ):
+        tool_calls.append({
+            "name": tool_call["name"],
+            "args": tool_call["args"],
+            "id": f"call_{index + 1}",
+            "type": "tool_call"
+        })
 
-            tool_calls.append({
-                "name": tool_call.function.name,
-                "args": tool_call.function.arguments,
-                "id": f"call_{index + 1}",
-                "type": "tool_call"
-            })
 
     ai_message = AIMessage(
-        content=response.message.content or "",
+        content=response.content or "",
         tool_calls=tool_calls
     )
 
     return {
-        "messages": [ai_message]
+        "messages": [ai_message],
+        "gemini_interaction_id": response.interaction_id
     }
 
 
