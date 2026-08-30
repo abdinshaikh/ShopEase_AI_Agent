@@ -1,7 +1,7 @@
 import sqlite3
 
 
-from ollama import chat
+from src.llm import call_ollama
 
 from langchain_core.messages import (
     AIMessage,
@@ -30,7 +30,6 @@ from src.agent_tools import (
 
 from config.settings import (
     MEMORY_DB_PATH,
-    OLLAMA_MODEL,
     DEBUG_MODE
 )
 
@@ -275,11 +274,9 @@ def agent_node(state: AgentState):
         }
     ] + ollama_messages
 
-    response = chat(
-        model=OLLAMA_MODEL,
-        messages=messages_for_qwen,
-        tools=tools,
-        think=False
+    response = call_ollama(
+        messages_for_qwen,
+        tools
     )
 
     if DEBUG_MODE:
