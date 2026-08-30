@@ -4,6 +4,14 @@ import uuid
 import streamlit as st
 
 from src.agent import create_agent, chat_with_shopease
+from scripts.initialize_database import initialize_database
+
+
+# =========================================================
+# Database initialization
+# =========================================================
+
+initialize_database()
 
 
 # =========================================================
