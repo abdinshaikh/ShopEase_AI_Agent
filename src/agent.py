@@ -266,30 +266,21 @@ def convert_to_ollama_messages(messages):
 def agent_node(state: AgentState):
 
     # -----------------------------------------------------
-    # Check whether this invocation is returning a tool
-    # result to Gemini.
+    # Get the previously stored Gemini interaction.
+    #
+    # This is used when continuing after a tool result.
     # -----------------------------------------------------
 
-    previous_interaction_id = ""
-
-    if state["messages"]:
-
-        last_message = state["messages"][-1]
-
-        if isinstance(
-            last_message,
-            ToolMessage
-        ):
-
-            previous_interaction_id = (
-                state.get(
-                    "gemini_interaction_id",
-                    ""
-                )
-            )
+    previous_interaction_id = (
+        state.get(
+            "gemini_interaction_id",
+            ""
+        )
+    )
 
     # -----------------------------------------------------
-    # Convert LangGraph messages to the common LLM format.
+    # Convert LangGraph messages into the common
+    # LLM message format.
     # -----------------------------------------------------
 
     ollama_messages = (
@@ -306,6 +297,31 @@ def agent_node(state: AgentState):
     ] + ollama_messages
 
     # -----------------------------------------------------
+    # Add the known order ID to the system context when
+    # one exists.
+    #
+    # This makes references such as:
+    # "Can I cancel it?"
+    # resolve to the previously identified order.
+    # -----------------------------------------------------
+
+    known_order_id = state.get(
+        "order_id",
+        ""
+    )
+
+    if known_order_id:
+
+        messages_for_llm[0]["content"] += (
+            "\n\nCURRENT CONVERSATION CONTEXT:"
+            f"\nThe order currently being discussed "
+            f"is order {known_order_id}."
+            "\nIf the customer refers to this order "
+            "using words such as 'it', 'this order', "
+            "or 'that order', use this order ID."
+        )
+
+    # -----------------------------------------------------
     # Call the configured LLM.
     # -----------------------------------------------------
 
@@ -313,7 +329,9 @@ def agent_node(state: AgentState):
         provider=LLM_PROVIDER,
         messages=messages_for_llm,
         tools=tools,
-        system_prompt=SHOP_EASE_SYSTEM_PROMPT,
+        system_prompt=(
+            messages_for_llm[0]["content"]
+        ),
         previous_interaction_id=(
             previous_interaction_id
         )
@@ -362,7 +380,11 @@ def tool_node(state: AgentState):
     tool_messages = []
 
     tool_result = ""
-    order_id = ""
+
+    # Preserve the previously known order ID
+    order_id = state.get(
+    "order_id",
+    "")  
 
     for tool_call in last_message.tool_calls:
 
