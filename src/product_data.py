@@ -1,4 +1,3 @@
-
 PRODUCTS = {
     "Laptop": {
         "price": 65000,
@@ -19,29 +18,48 @@ PRODUCTS = {
 }
 
 
+PRODUCT_ALIASES = {
+    "laptop": "Laptop",
+
+    "headphones": "Wireless Headphones",
+    "wireless headphone": "Wireless Headphones",
+    "wireless headphones": "Wireless Headphones",
+
+    "keyboard": "Mechanical Keyboard",
+    "mechanical keyboard": "Mechanical Keyboard",
+
+    "mouse": "Gaming Mouse",
+    "gaming mouse": "Gaming Mouse"
+}
+
+
 def get_product_info(product_name: str) -> str:
     """Return product price and category."""
 
     if not product_name:
         return "Product name was not provided."
 
-    # Normalize the user's/tool's product name.
     normalized_name = (
         product_name
         .strip()
         .casefold()
     )
 
-    # Find the canonical product name
-    # using a case-insensitive comparison.
-    matched_product_name = None
+    # First try known aliases.
+    matched_product_name = PRODUCT_ALIASES.get(
+        normalized_name
+    )
 
-    for name in PRODUCTS:
+    # If it is not an alias, check the actual
+    # product names case-insensitively.
+    if matched_product_name is None:
 
-        if name.casefold() == normalized_name:
+        for name in PRODUCTS:
 
-            matched_product_name = name
-            break
+            if name.casefold() == normalized_name:
+
+                matched_product_name = name
+                break
 
     if matched_product_name is None:
 
