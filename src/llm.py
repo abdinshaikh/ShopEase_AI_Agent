@@ -100,11 +100,10 @@ def call_gemini(
     """
     Call Gemini through the Interactions API.
 
-    A normal customer message starts a NEW interaction.
-
-    When Gemini requests a tool, LangGraph executes the
-    tool and calls this function again with the previous
-    Gemini interaction ID and the tool result.
+    Supports:
+    1. First user turn
+    2. Normal subsequent user turns
+    3. Tool-result continuation
     """
 
     api_key = os.getenv(
@@ -128,53 +127,80 @@ def call_gemini(
     )
 
     # =====================================================
-    # TOOL RESULT CONTINUATION
+    # Find the latest user/tool message
     # =====================================================
 
-    if previous_interaction_id:
+    latest_message = None
 
-        tool_message = None
+    for message in reversed(messages):
 
-        for message in reversed(messages):
+        if not isinstance(
+            message,
+            dict
+        ):
+            continue
 
-            if (
-                isinstance(message, dict)
-                and message.get("role") == "tool"
-            ):
+        role = message.get(
+            "role"
+        )
 
-                tool_message = message
-                break
+        if role in (
+            "user",
+            "tool"
+        ):
 
-        if tool_message is None:
+            latest_message = message
+            break
 
-            raise RuntimeError(
-                "Expected a tool result when "
-                "continuing a Gemini interaction."
-            )
+    if latest_message is None:
 
-        tool_name = tool_message.get(
+        raise RuntimeError(
+            "No user or tool message found."
+        )
+
+    latest_role = latest_message.get(
+        "role"
+    )
+
+    # =====================================================
+    # CASE 1:
+    # Tool result continuation
+    # =====================================================
+
+    if (
+        previous_interaction_id
+        and latest_role == "tool"
+    ):
+
+        tool_name = latest_message.get(
             "name"
         )
 
-        tool_call_id = tool_message.get(
-            "tool_call_id"
+        tool_call_id = (
+            latest_message.get(
+                "tool_call_id"
+            )
         )
 
-        tool_content = tool_message.get(
-            "content",
-            ""
+        tool_content = (
+            latest_message.get(
+                "content",
+                ""
+            )
         )
 
         if not tool_name:
 
             raise RuntimeError(
-                "Tool result is missing its tool name."
+                "Tool result is missing "
+                "its tool name."
             )
 
         if not tool_call_id:
 
             raise RuntimeError(
-                "Tool result is missing its call ID."
+                "Tool result is missing "
+                "its call ID."
             )
 
         function_result = {
@@ -184,61 +210,90 @@ def call_gemini(
             "result": [
                 {
                     "type": "text",
-                    "text": str(tool_content)
+                    "text": str(
+                        tool_content
+                    )
                 }
             ]
         }
 
-        response = client.interactions.create(
-            model=GEMINI_MODEL,
-            previous_interaction_id=(
-                previous_interaction_id
-            ),
-            input=[
-                function_result
-            ]
+        response = (
+            client.interactions.create(
+                model=GEMINI_MODEL,
+                previous_interaction_id=(
+                    previous_interaction_id
+                ),
+                input=[
+                    function_result
+                ]
+            )
         )
 
     # =====================================================
-    # NEW CUSTOMER TURN
+    # CASE 2:
+    # Normal subsequent user turn
     # =====================================================
 
-    else:
+    elif (
+        previous_interaction_id
+        and latest_role == "user"
+    ):
 
-        user_message = ""
-
-        for message in reversed(messages):
-
-            if not isinstance(
-                message,
-                dict
-            ):
-                continue
-
-            if message.get("role") == "user":
-
-                user_message = message.get(
-                    "content",
-                    ""
-                )
-
-                break
+        user_message = (
+            latest_message.get(
+                "content",
+                ""
+            )
+        )
 
         if not user_message:
 
             raise RuntimeError(
-                "No user message found."
+                "User message is empty."
             )
 
-        response = client.interactions.create(
-            model=GEMINI_MODEL,
-            input=user_message,
-            system_instruction=system_prompt,
-            tools=gemini_tools
+        response = (
+            client.interactions.create(
+                model=GEMINI_MODEL,
+                previous_interaction_id=(
+                    previous_interaction_id
+                ),
+                input=user_message,
+                tools=gemini_tools
+            )
         )
 
     # =====================================================
-    # NORMALIZE GEMINI RESPONSE
+    # CASE 3:
+    # First user turn
+    # =====================================================
+
+    else:
+
+        user_message = (
+            latest_message.get(
+                "content",
+                ""
+            )
+        )
+
+        if not user_message:
+
+            raise RuntimeError(
+                "User message is empty."
+            )
+
+        response = (
+            client.interactions.create(
+                model=GEMINI_MODEL,
+                input=user_message,
+                system_instruction=system_prompt,
+                tools=gemini_tools
+            )
+        )
+
+    # =====================================================
+    # Normalize Gemini response
     # =====================================================
 
     content = ""
