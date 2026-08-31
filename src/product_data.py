@@ -22,13 +22,40 @@ PRODUCTS = {
 def get_product_info(product_name: str) -> str:
     """Return product price and category."""
 
-    product = PRODUCTS.get(product_name)
+    if not product_name:
+        return "Product name was not provided."
 
-    if product is None:
-        return f"Product '{product_name}' was not found."
+    # Normalize the user's/tool's product name.
+    normalized_name = (
+        product_name
+        .strip()
+        .casefold()
+    )
+
+    # Find the canonical product name
+    # using a case-insensitive comparison.
+    matched_product_name = None
+
+    for name in PRODUCTS:
+
+        if name.casefold() == normalized_name:
+
+            matched_product_name = name
+            break
+
+    if matched_product_name is None:
+
+        return (
+            f"Product '{product_name}' "
+            "was not found."
+        )
+
+    product = PRODUCTS[
+        matched_product_name
+    ]
 
     return (
-        f"{product_name}: "
+        f"{matched_product_name}: "
         f"₹{product['price']}, "
         f"Category: {product['category']}"
     )
